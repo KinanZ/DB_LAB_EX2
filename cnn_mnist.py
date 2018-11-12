@@ -130,50 +130,47 @@ def train_and_validate(x_train, y_train, x_valid, y_valid, num_epochs, lr, num_f
     train_step = tf.train.GradientDescentOptimizer(lr).minimize(cross_entropy)
 
     correct_prediction = tf.equal(tf.argmax(y_conv,1), tf.argmax(y_,1))
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32), name="accuracy")
     
     saver = tf.train.Saver()
-    sess = tf.Session()
+        
+    with tf.Session() as sess:
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32), name = "accuracy")
+        sess.run(tf.global_variables_initializer())
+        learning_curve = np.zeros(num_epochs)
+        
+        for i in range(num_epochs):
+            for batch in range(num_batches):
+                x_batch = x_train[batch*batch_size:(batch+1)*batch_size]
+                y_batch = y_train[batch*batch_size:(batch+1)*batch_size]
+                
+                train_step.run(session=sess, feed_dict={x_image: x_batch, y_: y_batch})
 
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32), name="accuracy")
-    sess.run(tf.global_variables_initializer())
-    learning_curve = np.zeros(num_epochs)
-
-    for i in range(num_epochs):
-        for batch in range(num_batches):
-            x_batch = x_train[batch*batch_size:(batch+1)*batch_size]
-            y_batch = y_train[batch*batch_size:(batch+1)*batch_size]
-
-            train_step.run(session=sess, feed_dict={x_image: x_batch, y_: y_batch})
-
-            train_accuracy = accuracy.eval(session=sess, feed_dict={x_image: x_train, y_: y_train})
+		        #train_accuracy = accuracy.eval(session=sess, feed_dict={x_image: x_train, y_: y_train})
             learning_curve[i] = 1 - accuracy.eval(session=sess, feed_dict={x_image:x_valid, y_:y_valid})
-            print("step %d, training accuracy %g"%(i, train_accuracy))
-            
-    model = saver.save(sess, './models/' + str(count) + '.ckpt')
-    count += 1
-    print("Model saved in path: %s" % model)
-    sess.close()
+            print("step %d, training error %g"%(i, learning_curve[i] ))
+        
+        model = saver.save(sess, './models/' + str(count) + '.ckpt')
+        count += 1
+        print("Model saved in path: %s" % model)
+     
     return learning_curve, model  # TODO: Return the validation error after each epoch (i.e learning curve) and your model
 
 
 def test(x_test, y_test, model):
     # TODO: test your network here by evaluating it on the test data
     tf.reset_default_graph()
-    graph = tf.Graph()
-    sess = tf.Session(graph = graph)
+    graph = tf.get_default_graph()
 
-    saver = tf.train.import_meta_graph(model + '.meta')
-    saver.restore(sess, model)
+    with tf.Session(graph = graph) as sess:
+        saver = tf.train.import_meta_graph(model + '.meta')
+        saver.restore(sess, model)
 
-    accuracy = graph.get_tensor_by_name("accuracy:0")
-    x_image = graph.get_tensor_by_name("input_data:0")
-    y_ = graph.get_tensor_by_name("output_data:0")
-    test_error = 1 - accuracy.eval(session=sess, feed_dict={x_image: x_test, y_: y_test})
+        accuracy = graph.get_tensor_by_name("accuracy:0")
+        x_image = graph.get_tensor_by_name("x:0")
+        y_ = graph.get_tensor_by_name("y_:0")
+        test_error = 1 - accuracy.eval(session=sess, feed_dict={x_image: x_test, y_: y_test})
     
-    sess.close()
     return test_error
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -182,10 +179,10 @@ if __name__ == "__main__":
     parser.add_argument("--input_path", default="./", type=str, nargs="?",
                         help="Path where the data is located. If the data is not available it will be downloaded first")
     parser.add_argument("--learning_rate", default=1e-3, type=float, nargs="?", help="Learning rate for SGD")
-    parser.add_argument("--num_filters", default=32, type=int, nargs="?",
+    parser.add_argument("--num_filters", default=16, type=int, nargs="?",
                         help="The number of filters for each convolution layer")
     parser.add_argument("--batch_size", default=128, type=int, nargs="?", help="Batch size for SGD")
-    parser.add_argument("--epochs", default=2, type=int, nargs="?",
+    parser.add_argument("--epochs", default=12, type=int, nargs="?",
                         help="Determines how many epochs the network will be trained")
     parser.add_argument("--run_id", default=0, type=int, nargs="?",
                         help="Helps to identify different runs of an experiments")
@@ -222,5 +219,55 @@ if __name__ == "__main__":
     fname = os.path.join(path, "results_run_%d.json" % args.run_id)
 
     fh = open(fname, "w")
-    json.dump(results, fh)
+    #json.dump(results, fh)
     fh.close()
+
+    lrs = [0.1, 0.01, 0.001, 0.0001]
+    for i in range(len(lrs)):
+        x_train, y_train, x_valid, y_valid, x_test, y_test = mnist(args.input_path)
+
+        learning_curve, model = train_and_validate(x_train, y_train, x_valid, y_valid, epochs, lrs[i], num_filters, batch_size, filter_size)
+
+        test_error = test(x_test, y_test, model)
+
+        # save results in a dictionary and write them into a .json file
+        results = dict()
+        results["lr"] = lrs[i]
+        results["num_filters"] = num_filters
+        results["batch_size"] = batch_size
+        results["learning_curve"] = learning_curve.tolist()
+        results["test_error"] = test_error.tolist()
+
+        path = os.path.join(args.output_path, "results_learning_rates")
+        os.makedirs(path, exist_ok=True)
+
+        fname = os.path.join(path, "results_run_" + str(i+1) + ".json")
+
+        fh = open(fname, "w")
+        json.dump(results, fh)
+        fh.close()
+
+    filters = [1, 3, 5, 7]
+    for i in range(len(filters)):
+        x_train, y_train, x_valid, y_valid, x_test, y_test = mnist(args.input_path)
+
+        learning_curve, model = train_and_validate(x_train, y_train, x_valid, y_valid, epochs, lr, num_filters, batch_size, filters[i])
+
+        test_error = test(x_test, y_test, model)
+
+        # save results in a dictionary and write them into a .json file
+        results = dict()
+        results["lr"] = lr
+        results["num_filters"] = num_filters
+        results["batch_size"] = batch_size
+        results["learning_curve"] = learning_curve.tolist()
+        results["test_error"] = test_error.tolist()
+
+        path = os.path.join(args.output_path, "results_filters")
+        os.makedirs(path, exist_ok=True)
+
+        fname = os.path.join(path, "results_run_" + str(i+1) + ".json")
+
+        fh = open(fname, "w")
+        json.dump(results, fh)
+        fh.close()

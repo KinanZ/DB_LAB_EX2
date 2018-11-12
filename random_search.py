@@ -7,10 +7,15 @@ import hpbandster.core.nameserver as hpns
 from hpbandster.optimizers import RandomSearch
 
 import ConfigSpace as CS
+import ConfigSpace.hyperparameters as CSH
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 from hpbandster.core.worker import Worker
 import argparse
 
-from cnn_mnist_solution import mnist
+from cnn_mnist import mnist, LeNet
 
 
 class MyWorker(Worker):
@@ -39,6 +44,7 @@ class MyWorker(Worker):
         epochs = budget
 
         # TODO: train and validate your convolutional neural networks here
+        validation_error, model = train_and_validate(x_train, y_train, x_valid, y_valid, epochs, lr, num_filters, batch_size, filter_size)
 
         # TODO: We minimize so make sure you return the validation error here
         return ({
@@ -50,8 +56,14 @@ class MyWorker(Worker):
     def get_configspace():
         config_space = CS.ConfigurationSpace()
 
-        # TODO: Implement configuration space here. See https://github.com/automl/HpBandSter/blob/master/hpbandster/examples/example_5_keras_worker.py  for an example
+        config_space = CS.ConfigurationSpace()
+        lr = CSH.UniformFloatHyperparameter('learning_rate', lower=1e-4, upper=1e-1, default_value='1e-2', log=True)
 
+        batch_size = CSH.UniformIntegerHyperparameter('batch_size', lower=16, upper=128, default_value=64, log=True)
+
+        num_filters = CSH.UniformIntegerHyperparameter('num_filters', lower=8, upper=64, default_value=16, log=True)
+        filter_size = CSH.CategoricalHyperparameter('filter_size', ['3', '4', '5'])
+        
         return config_space
 
 
