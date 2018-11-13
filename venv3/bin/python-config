@@ -1,4 +1,4 @@
-#!/home/alzouabk/Desktop/DB_LAB_EX2/venv3/bin/python
+#!/home/alzouabk/DB_LAB_EX2/venv3/bin/python
 
 import sys
 import getopt

@@ -1,7 +1,5 @@
 import logging
 
-logging.basicConfig(level=logging.WARNING)
-
 import hpbandster.core.nameserver as hpns
 
 from hpbandster.optimizers import RandomSearch
@@ -9,13 +7,20 @@ from hpbandster.optimizers import RandomSearch
 import ConfigSpace as CS
 import ConfigSpace.hyperparameters as CSH
 
-import logging
-logging.basicConfig(level=logging.DEBUG)
-
 from hpbandster.core.worker import Worker
 import argparse
 
 from cnn_mnist import mnist, LeNet
+
+logging.basicConfig(level=logging.WARNING)
+
+import numpy as np
+
+import tensorflow as tf
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+
 
 
 class MyWorker(Worker):
@@ -27,8 +32,7 @@ class MyWorker(Worker):
     def compute(self, config, budget, **kwargs):
         """
         Evaluates the configuration on the defined budget and returns the validation performance.
-
-        Args:
+        rgs:
             config: dictionary containing the sampled configurations by the optimizer
             budget: (float) amount of time/epochs/etc. the model can use to train
         Returns:
@@ -39,12 +43,37 @@ class MyWorker(Worker):
         lr = config["learning_rate"]
         num_filters = config["num_filters"]
         batch_size = config["batch_size"]
-        filter_size = config["filter_size"]
-
         epochs = budget
-
+        filter_size = config['filter_size']
         # TODO: train and validate your convolutional neural networks here
-        validation_error, model = train_and_validate(x_train, y_train, x_valid, y_valid, epochs, lr, num_filters, batch_size, filter_size)
+
+        x_image = tf.placeholder(tf.float32, [None, 28,28,1], name='x')
+        y_ = tf.placeholder(tf.float32, [None, 10], name='y_')
+       
+        num_samples = self.x_train.shape[0]
+        num_batches = num_samples // batch_size
+
+    	# Forward pass
+        y_conv = LeNet(x_image, lr, num_filters, filter_size)
+
+        cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(labels=y_,logits=y_conv)
+        cross_entropy = tf.reduce_mean(cross_entropy)*100
+        train_step = tf.train.GradientDescentOptimizer(lr).minimize(cross_entropy)
+ 
+        correct_prediction = tf.equal(tf.argmax(y_conv,1), tf.argmax(y_,1))
+
+        with tf.Session() as sess:
+            accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32), name = "accuracy")
+            sess.run(tf.global_variables_initializer())
+            validation_error = np.zeros(epochs)
+            for i in range(epochs):
+                for batch in range(num_batches):
+                    x_batch = self.x_train[batch*batch_size:(batch+1)*batch_size]
+                    y_batch = self.y_train[batch*batch_size:(batch+1)*batch_size]
+                    train_step.run(session=sess, feed_dict={x_image: x_batch, y_: y_batch})
+
+                validation_error[i] = 1 - accuracy.eval(session=sess, feed_dict={x_image:self.x_valid, y_:self.y_valid})
+                print("step %d, validation_error %g"%(i, validation_error[i] ))
 
         # TODO: We minimize so make sure you return the validation error here
         return ({
@@ -54,7 +83,6 @@ class MyWorker(Worker):
 
     @staticmethod
     def get_configspace():
-        config_space = CS.ConfigurationSpace()
 
         config_space = CS.ConfigurationSpace()
         lr = CSH.UniformFloatHyperparameter('learning_rate', lower=1e-4, upper=1e-1, default_value='1e-2', log=True)
@@ -63,14 +91,18 @@ class MyWorker(Worker):
 
         num_filters = CSH.UniformIntegerHyperparameter('num_filters', lower=8, upper=64, default_value=16, log=True)
         filter_size = CSH.CategoricalHyperparameter('filter_size', ['3', '4', '5'])
-        
+
+        config_space.add_hyperparameters([lr, batch_size, num_filters, filter_size])
+
+        # TODO: Implement configuration space here. See https://github.com/automl/HpBandSter/blob/master/hpbandster/examples/example_5_keras_worker.py  for an example
+
         return config_space
 
 
 parser = argparse.ArgumentParser(description='Example 1 - sequential and local execution.')
 parser.add_argument('--budget', type=float,
-                    help='Maximum budget used during the optimization, i.e the number of epochs.', default=12)
-parser.add_argument('--n_iterations', type=int, help='Number of iterations performed by the optimizer', default=20)
+                    help='Maximum budget used during the optimization, i.e the number of epochs.', default=6)
+parser.add_argument('--n_iterations', type=int, help='Number of iterations performed by the optimizer', default=50)
 args = parser.parse_args()
 
 # Step 1: Start a nameserver
@@ -122,7 +154,7 @@ import hpbandster.visualization as hpvis
 
 hpvis.losses_over_time(all_runs)
 
-import matplotlib.pyplot as plt
+
 plt.savefig("random_search.png")
 
 # TODO: retrain the best configuration (called incumbent) and compute the test error
