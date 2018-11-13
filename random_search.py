@@ -47,6 +47,7 @@ class MyWorker(Worker):
         filter_size = config['filter_size']
         # TODO: train and validate your convolutional neural networks here
 
+        sess = tf.InteractiveSession()
         x_image = tf.placeholder(tf.float32, [None, 28,28,1], name='x')
         y_ = tf.placeholder(tf.float32, [None, 10], name='y_')
        
@@ -54,26 +55,27 @@ class MyWorker(Worker):
         num_batches = num_samples // batch_size
 
     	# Forward pass
+        y_conv = tf.placeholder(tf.float32, [None, 10])
         y_conv = LeNet(x_image, lr, num_filters, filter_size)
+        
+        sess.run(tf.global_variables_initializer())
 
         cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(labels=y_,logits=y_conv)
-        cross_entropy = tf.reduce_mean(cross_entropy)*100
+        cross_entropy = tf.reduce_mean(cross_entropy) * 100
         train_step = tf.train.GradientDescentOptimizer(lr).minimize(cross_entropy)
  
         correct_prediction = tf.equal(tf.argmax(y_conv,1), tf.argmax(y_,1))
 
-        with tf.Session() as sess:
-            accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32), name = "accuracy")
-            sess.run(tf.global_variables_initializer())
-            validation_error = np.zeros(epochs)
-            for i in range(epochs):
-                for batch in range(num_batches):
-                    x_batch = self.x_train[batch*batch_size:(batch+1)*batch_size]
-                    y_batch = self.y_train[batch*batch_size:(batch+1)*batch_size]
-                    train_step.run(session=sess, feed_dict={x_image: x_batch, y_: y_batch})
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32), name = "accuracy")
+        
+        for i in range(epochs):
+            for batch in range(num_batches):
+                x_batch = self.x_train[batch*batch_size:(batch+1)*batch_size]
+                y_batch = self.y_train[batch*batch_size:(batch+1)*batch_size]
+                train_step.run(session=sess, feed_dict={x_image: x_batch, y_: y_batch})
 
-                validation_error[i] = 1 - accuracy.eval(session=sess, feed_dict={x_image:self.x_valid, y_:self.y_valid})
-                print("step %d, validation_error %g"%(i, validation_error[i] ))
+            validation_error = 1 - accuracy.eval(session=sess, feed_dict={x_image:self.x_valid, y_:self.y_valid})
+            print("step %d, validation_error %g"%(i, validation_error ))
 
         # TODO: We minimize so make sure you return the validation error here
         return ({
