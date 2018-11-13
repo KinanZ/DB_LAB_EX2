@@ -159,7 +159,7 @@ def train_and_validate(x_train, y_train, x_valid, y_valid, num_epochs, lr, num_f
 def test(x_test, y_test, model):
     # TODO: test your network here by evaluating it on the test data
     tf.reset_default_graph()
-    graph = tf.get_default_graph()
+    graph = tf.Graph()
 
     with tf.Session(graph = graph) as sess:
         saver = tf.train.import_meta_graph(model + '.meta')
